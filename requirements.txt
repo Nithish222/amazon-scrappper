@@ -1,3 +1,5 @@
 scrapy
 ipython
 selenium
+python-dotenv
+google-cloud-bigquery
