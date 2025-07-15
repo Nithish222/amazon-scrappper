@@ -1,0 +1,1 @@
+BQ_PRODUCT_TABLE="amazon_product_data"
