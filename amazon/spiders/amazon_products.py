@@ -38,19 +38,14 @@ class AmazonProductsSpider(scrapy.Spider):
             basic = response.css("div#centerCol")
             pdt_item['asin'] = response.url.split('dp/')[1].split('/')[0]
             pdt_item['name'] = basic.css("span#productTitle::text").get().strip()
-
-            avail = response.css("div#availability_feature_div div#availability")
-            if not avail:
-                pdt_item['is_available'] = "yes"
-            else:
-                pdt_item['is_available'] = "no"
-
+            pdt_item['url'] = response.url
+            pdt_item['is_available'] = response.css("div#availability_feature_div div#availability")
             pdt_item['brand'] = basic.css("a#bylineInfo::text").get().strip()
             pdt_item['brand_url'] = basic.css("a#bylineInfo::attr(href)").get()
             pdt_item['rating'] = basic.css("span#acrPopover::attr(title)").get()
             pdt_item['review_count'] = basic.css("span#acrCustomerReviewText::text").get()
             pdt_item['seller'] = response.css("a#sellerProfileTriggerId::text").get().strip()
-            pdt_item['seller_url'] = "https://amazon.in" + response.css("a#sellerProfileTriggerId::attr(href)").get()
+            pdt_item['seller_url'] = response.css("a#sellerProfileTriggerId::attr(href)").get()
 
             dynamic_data = self.get_dynamic_content(response.url)
             pdt_item['past_count'] = dynamic_data.get('bought')
@@ -63,8 +58,6 @@ class AmazonProductsSpider(scrapy.Spider):
             pdt_item['together'] = dynamic_data.get('frequently_bought')
             pdt_item['summary'] = dynamic_data.get('summary')
             pdt_item['mentions'] = dynamic_data.get('mentions')
-
-            self.logger.info(f"Full item: {dict(pdt_item)}")
 
         except Exception as e:
             print(e)
@@ -162,7 +155,6 @@ class AmazonProductsSpider(scrapy.Spider):
                 # Loop to click through all features
                 while True:
                     try:
-                        # Get visible features (not hidden)
                         features = features_tag.find_elements(By.CSS_SELECTOR, "li.a-carousel-card:not([aria-hidden='true'])")
                         
                         for feature in features:
@@ -225,7 +217,7 @@ class AmazonProductsSpider(scrapy.Spider):
                     title = titles.text.strip()
                     price = prices.text.strip().replace('\n', '.')
                     if title and price:
-                        frequently_list.append({'title': title, 'price': price})
+                        frequently_list.append({'name': title, 'price': price})
                 data['frequently_bought'] = frequently_list
             except Exception as e:
                 print(f"Could not find frequently bought products: {e}")
@@ -277,5 +269,5 @@ class AmazonProductsSpider(scrapy.Spider):
         
         return data
 
-    def parse(self, response):
+    def parse_product_mode(self, response):
         pass
