@@ -1,3 +1,4 @@
+from turtle import pd
 import scrapy
 from amazon.items import *
 from selenium import webdriver
@@ -35,15 +36,35 @@ class AmazonProductsSpider(scrapy.Spider):
             pdt_item = ProductItem()
 
             basic = response.css("div#centerCol")
-            pdt_item['name'] = basic.css("span#productTitle::text").get()
-            pdt_item['seller'] = basic.css("a#bylineInfo::text").get()
-            pdt_item['seller_url'] = basic.css("a#bylineInfo::attr(href)").get()
+            pdt_item['asin'] = response.url.split('dp/')[1].split('/')[0]
+            pdt_item['name'] = basic.css("span#productTitle::text").get().strip()
+
+            avail = response.css("div#availability_feature_div div#availability")
+            if not avail:
+                pdt_item['is_available'] = "yes"
+            else:
+                pdt_item['is_available'] = "no"
+
+            pdt_item['brand'] = basic.css("a#bylineInfo::text").get().strip()
+            pdt_item['brand_url'] = basic.css("a#bylineInfo::attr(href)").get()
             pdt_item['rating'] = basic.css("span#acrPopover::attr(title)").get()
             pdt_item['review_count'] = basic.css("span#acrCustomerReviewText::text").get()
-            
-            dynamic_data = self.get_dynamic_content(response.url)
+            pdt_item['seller'] = response.css("a#sellerProfileTriggerId::text").get().strip()
+            pdt_item['seller_url'] = "https://amazon.in" + response.css("a#sellerProfileTriggerId::attr(href)").get()
 
-            print(dynamic_data.get('offers'))
+            dynamic_data = self.get_dynamic_content(response.url)
+            pdt_item['past_count'] = dynamic_data.get('bought')
+            pdt_item['discount'] = dynamic_data.get('discount')
+            pdt_item['price'] = dynamic_data.get('price')
+            pdt_item['mrp'] = dynamic_data.get('mrp')
+            pdt_item['offers'] = dynamic_data['offers']
+            pdt_item['features'] = dynamic_data.get('features')
+            pdt_item['overview'] = dynamic_data.get('overview')
+            pdt_item['together'] = dynamic_data.get('frequently_bought')
+            pdt_item['summary'] = dynamic_data.get('summary')
+            pdt_item['mentions'] = dynamic_data.get('mentions')
+
+            self.logger.info(f"Full item: {dict(pdt_item)}")
 
         except Exception as e:
             print(e)
@@ -72,9 +93,9 @@ class AmazonProductsSpider(scrapy.Spider):
 
             try:
                 pricing = main.find_element(By.ID, "corePriceDisplay_desktop_feature_div")
-                data['discount'] = pricing.find_element(By.CSS_SELECTOR, "span.savingPriceOverride").text
-                data['price'] = pricing.find_element(By.CSS_SELECTOR, "span.a-price-symbol").text + pricing.find_element(By.CSS_SELECTOR, "span.a-price-whole").text
-                data['mrp'] = pricing.find_element(By.CSS_SELECTOR, "span.aok-relative").text
+                data['discount'] = pricing.find_element(By.CSS_SELECTOR, "span.savingPriceOverride").text.strip()
+                data['price'] = pricing.find_element(By.CSS_SELECTOR, "span.a-price-symbol").text.strip() + pricing.find_element(By.CSS_SELECTOR, "span.a-price-whole").text.strip()
+                data['mrp'] = pricing.find_element(By.CSS_SELECTOR, "span.aok-relative").text.strip()
             except Exception as e:
                 print(f"Could not find pricing data: {e}")
                 data['discount'] = ""
@@ -150,7 +171,6 @@ class AmazonProductsSpider(scrapy.Spider):
                                 if feature_name and feature_name.strip():
                                     if feature_name not in feature_list:
                                         feature_list.append(feature_name)
-                                        print(f"Feature name: {feature_name}")
                             except Exception as e:
                                 print(f"Could not extract feature name: {e}")
                                 continue
@@ -170,7 +190,6 @@ class AmazonProductsSpider(scrapy.Spider):
                                         if feature_name and feature_name.strip():
                                             if feature_name not in feature_list:
                                                 feature_list.append(feature_name)
-                                                print(f"Feature name: {feature_name}")
                                     except Exception as e:
                                         print(f"Could not extract feature name: {e}")
                                         continue
@@ -191,7 +210,7 @@ class AmazonProductsSpider(scrapy.Spider):
                 data['features'] = []
 
             try:
-                overview = driver.find_element(By.CSS_SELECTOR, "div#productOverview_feature_div tbody").text 
+                overview = driver.find_element(By.CSS_SELECTOR, "div#productOverview_feature_div tbody").text.strip()
                 data['overview'] = overview
             except Exception as e:
                 print(f"Could not find overview: {e}")
@@ -236,7 +255,7 @@ class AmazonProductsSpider(scrapy.Spider):
             # except Exception as e:
             #     print(f"can not find frequently bought together: {e}")
             try:
-                summary = driver.find_element(By.CSS_SELECTOR, "div#product-summary p.a-spacing-small").text
+                summary = driver.find_element(By.CSS_SELECTOR, "div#product-summary p.a-spacing-small").text.strip()
                 data['summary'] = summary
             except Exception as e:
                 print(f"Can not find product summary: {e}")
@@ -246,7 +265,7 @@ class AmazonProductsSpider(scrapy.Spider):
                 mentions_list = []
                 mentions = driver.find_elements(By.CSS_SELECTOR, "div[aria-label='Commonly Mentioned Aspects'] a")
                 for mention in mentions:
-                    mention_text = mention.text
+                    mention_text = mention.text.strip()
                     mentions_list.append(mention_text)
                 data['mentions'] = mentions_list
             except Exception as e:
