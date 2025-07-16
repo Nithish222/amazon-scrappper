@@ -27,11 +27,11 @@ class AmazonProductsSpider(scrapy.Spider):
 
     def start_requests(self):
         if self.mode == "link":
-            yield scrapy.Request(self.start_url, callback=self.parse_link_mode)
+            yield scrapy.Request(self.start_url, callback=self.parse_link)
         elif self.mode == "product":
             yield scrapy.Request(self.start_url, callback=self.parse_product_mode)
 
-    def parse_link_mode(self, response):
+    def parse_link(self, response):
         try:
             pdt_item = ProductItem()
 
@@ -270,4 +270,7 @@ class AmazonProductsSpider(scrapy.Spider):
         return data
 
     def parse_product_mode(self, response):
-        pass
+        products = response.css("div[role='listitem'] div.puis-card-container.s-card-container.s-overflow-hidden.aok-relative.puis-include-content-margin.puis.puis-v1pfvhdyb17azh26l1nclajlx70.s-latency-cf-section.puis-card-border")
+        for product in products:
+            url = "https://amazon.in" + product.css("div[data-cy='title-recipe'] a::attr(href)").get()
+            yield scrapy.Request(url, callback=self.parse_link)
