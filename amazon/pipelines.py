@@ -1,10 +1,3 @@
-# Define your item pipelines here
-#
-# Don't forget to add your pipeline to the ITEM_PIPELINES setting
-# See: https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-
-
-# useful for handling different item types with a single interface
 import json
 from math import e
 from itemadapter import ItemAdapter
@@ -17,6 +10,7 @@ from pyasn1.type.univ import Null
 from urllib3.util import retry
 from config import BQ_PRODUCT_TABLE
 from .items import *
+from datetime import datetime, timezone
 
 load_dotenv()
 class AmazonPipeline:
@@ -28,7 +22,17 @@ class AmazonPipeline:
         self.product_table = BQ_PRODUCT_TABLE
         self.client = None
         self.table_refs = {}
-        
+        self.seen_asins = set()
+        try:
+            with open('output.json', 'r') as f:
+                for line in f:
+                    obj = json.loads(line)
+                    asin = obj.get('asin')
+                    if asin:
+                        self.seen_asins.add(asin)
+        except FileNotFoundError:
+            pass
+
     @classmethod
     def from_crawler(cls, crawler):
         pipeline = cls()
@@ -45,6 +49,12 @@ class AmazonPipeline:
         return pipeline
 
     def process_item(self, item, spider):
+        asin = item.get('asin')
+        if asin in self.seen_asins:
+            self.logger.info(f"Duplicate product skipped: {asin}")
+            return None
+        self.seen_asins.add(asin)
+
         try:
             item['rating'] = self.clean_rating(item.get('rating'))
             item['price'] = self.clean_price(item.get('price'))
@@ -53,6 +63,7 @@ class AmazonPipeline:
             item['brand_url'] = self.clean_url(item.get('brand_url'))
             item['seller_url'] = self.clean_url(item.get('seller_url'))
             item['is_available'] = self.clean_available(item.get('is_available'))
+            item['scraped_at'] = datetime.now(timezone.utc).isoformat()
         except Exception as e:
             self.logger.info(f"Error cleaning the data: {e}")
 
@@ -141,7 +152,8 @@ class AmazonPipeline:
         #             for product in item.get('together', [])
         #         ],
         #         'summary': item.get('summary'),
-        #         'mentions': item.get('mentions')
+        #         'mentions': item.get('mentions'),
+        #         'scraped_at': item.get('scraped_at')
         #     }
         #     errors = self.client.insert_rows_json(
         #         self.table_refs['product_data'],
@@ -183,7 +195,8 @@ class AmazonPipeline:
                 for product in item.get('together', [])
             ],
             'summary': item.get('summary'),
-            'mentions': item.get('mentions')
+            'mentions': item.get('mentions'),
+            'scraped_at': item.get('scraped_at')
         }
         with open('output.json', 'a') as f:
             f.write(json.dumps(row) + '\n')
