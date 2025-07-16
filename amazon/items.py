@@ -39,3 +39,4 @@ class ProductItem(scrapy.Item):
     # also_bought = scrapy.Field()
     summary = scrapy.Field()
     mentions = scrapy.Field()
+    scraped_at = scrapy.Field()
