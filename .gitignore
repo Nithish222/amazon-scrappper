@@ -1,4 +1,10 @@
 __pycache__
 __init__.py
 .env
+*.jsonA1Z``
+.jpg
+.DS_Store
 *.json
+*.png
+*.html
+*.csv

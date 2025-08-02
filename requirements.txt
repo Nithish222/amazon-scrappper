@@ -1,5 +1,10 @@
 scrapy
 ipython
-selenium
+scrapy-playwright
 python-dotenv
 google-cloud-bigquery
+scrapy-user-agents
+scrapy-rotating-proxies
+requests
+scrapy-playwright
+scrapy-user-agents

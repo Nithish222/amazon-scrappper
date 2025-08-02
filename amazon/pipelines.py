@@ -1,13 +1,11 @@
 import json
 from math import e
-from itemadapter import ItemAdapter
+
 from google.cloud import bigquery
 from google.oauth2 import service_account
 import logging
 import os
 from dotenv import load_dotenv
-from pyasn1.type.univ import Null
-from urllib3.util import retry
 from config import BQ_PRODUCT_TABLE
 from .items import *
 from datetime import datetime, timezone
@@ -22,14 +20,26 @@ class AmazonPipeline:
         self.product_table = BQ_PRODUCT_TABLE
         self.client = None
         self.table_refs = {}
-        self.seen_asins = set()
+        self.seen_asins = {}
         try:
             with open('output.json', 'r') as f:
                 for line in f:
-                    obj = json.loads(line)
-                    asin = obj.get('asin')
-                    if asin:
-                        self.seen_asins.add(asin)
+                    line = line.strip()
+                    if not line:
+                        continue  # skip blank lines
+                    try:
+                        obj = json.loads(line)
+                        asin = obj.get('asin')
+                        scraped_at_str = obj.get('scraped_at')
+                        if asin and scraped_at_str:
+                            try:
+                                scraped_at = datetime.fromisoformat(scraped_at_str)
+                                if asin not in self.seen_asins or scraped_at > self.seen_asins[asin]:
+                                    self.seen_asins[asin] = scraped_at
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue  # skip invalid lines
         except FileNotFoundError:
             pass
 
@@ -49,11 +59,25 @@ class AmazonPipeline:
         return pipeline
 
     def process_item(self, item, spider):
-        asin = item.get('asin')
-        if asin in self.seen_asins:
-            self.logger.info(f"Duplicate product skipped: {asin}")
-            return None
-        self.seen_asins.add(asin)
+        # asin = item.get('asin')
+        # # Set scraped_at before checking
+        # item['scraped_at'] = item.get('scraped_at') or datetime.now(timezone.utc).isoformat()
+        # scraped_at_str = item['scraped_at']
+        # if not asin or not scraped_at_str:
+        #     self.logger.warning(f"Skipping item due to missing asin or scraped_at: {item}")
+        #     return item
+        # try:
+        #     scraped_at = datetime.fromisoformat(scraped_at_str)
+        # except Exception:
+        #     scraped_at = datetime.now(timezone.utc)
+        # last_scraped = self.seen_asins.get(asin)
+        # if last_scraped:
+        #     if scraped_at.date() == last_scraped.date():
+        #         self.logger.info(f"Duplicate product skipped (same day): {asin}")
+        #         return None
+        #     else:
+        #         self.logger.info(f"Product re-scraped on a new day: {asin}")
+        # self.seen_asins[asin] = scraped_at
 
         try:
             item['rating'] = self.clean_rating(item.get('rating'))
@@ -63,7 +87,7 @@ class AmazonPipeline:
             item['brand_url'] = self.clean_url(item.get('brand_url'))
             item['seller_url'] = self.clean_url(item.get('seller_url'))
             item['is_available'] = self.clean_available(item.get('is_available'))
-            item['scraped_at'] = datetime.now(timezone.utc).isoformat()
+            # item['scraped_at'] = datetime.now(timezone.utc).isoformat()  # Already set above
         except Exception as e:
             self.logger.info(f"Error cleaning the data: {e}")
 
@@ -78,41 +102,44 @@ class AmazonPipeline:
         return item
 
     def clean_rating(self, rating):
-        if rating:
-            cleaned = str(rating).split(' ')[0]
-            try:
-                return float(cleaned)
-            except ValueError:
-                return 0.0
-        else:
+        if rating is None:
+            return 0.0
+        if isinstance(rating, (int, float)):
+            return float(rating)
+        cleaned = str(rating).split(' ')[0]
+        try:
+            return float(cleaned)
+        except ValueError:
             return 0.0
     
     def clean_price(self, price):
-        if price is not None and price != "":
-            cleaned = str(price).split(':')[-1]
-            cleaned = cleaned.replace('₹', '').replace(',', '').strip()
-            cleaned = cleaned.replace('\n', '')
-            try:
-                return float(cleaned)
-            except ValueError:
-                return 0.0
-        else:
+        if price is None or price == "":
+            return 0.0
+        if isinstance(price, (int, float)):
+            return float(price)
+        cleaned = str(price).split(':')[-1]
+        cleaned = cleaned.replace('₹', '').replace(',', '').strip()
+        cleaned = cleaned.replace('\n', '')
+        try:
+            return float(cleaned)
+        except ValueError:
             return 0.0
     
     def clean_review(self, review):
-        if review is not None and review != "":
-            cleaned = ''.join(review.split(',')).split(' ')[0]
-            try:
-                return int(cleaned)
-            except ValueError:
-                return 0
-        else:
+        if review is None or review == "":
+            return 0
+        if isinstance(review, int):
+            return review
+        cleaned = ''.join(str(review).split(',')).split(' ')[0]
+        try:
+            return int(cleaned)
+        except ValueError:
             return 0
 
     def clean_url(self, url):
         if url is not None and url != "":
-            complete = "https://amazon.in" + url
-        return complete
+            return "https://amazon.in" + url
+        return ""
 
     def clean_available(self, available):
         if not available:
@@ -187,16 +214,25 @@ class AmazonPipeline:
             'offers': item.get('offers'),
             'features': item.get('features'),
             'overview': item.get('overview'),
-            'together': [
-                {
-                    'product_name': product.get('name'),
-                    'product_price': self.clean_price(product.get('price'))
-                }
-                for product in item.get('together', [])
-            ],
+            # 'together': [
+            #     {
+            #         'product_name': product.get('name'),
+            #         'product_price': self.clean_price(product.get('price'))
+            #     }
+            #     for product in item.get('together', [])
+            # ],
+            'together': item.get('together'),
             'summary': item.get('summary'),
             'mentions': item.get('mentions'),
             'scraped_at': item.get('scraped_at')
         }
-        with open('output.json', 'a') as f:
-            f.write(json.dumps(row) + '\n')
+        
+        # Debug logging
+        self.logger.info(f"About to write to output.json: {row}")
+        try:
+            with open('output.json', 'a') as f:
+                f.write(json.dumps(row) + '\n')
+            self.logger.info(f"Successfully wrote to output.json")
+        except Exception as e:
+            self.logger.error(f"Error writing to output.json: {e}")
+            raise
